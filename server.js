@@ -253,11 +253,7 @@ app.use((error, req, res, next) => {
     error: "Error interno del servidor"
   });
 });
-
-// Iniciar servidor
 app.listen(port, () => {
-  console.log(`Servidor ejecutándose en puerto ${port}`);
-  console.log(`Salud del servidor: http://localhost:${port}/api/health`);
+  console.log(`Servidor corriendo en el puerto ${port}`);
 });
-
 module.exports = app;
