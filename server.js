@@ -10,8 +10,19 @@ const port = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-const connectionString = process.env.DATABASE_URL;
+// Conexión a la base de datos
+const connectionString = process.env.DATABASE_URL || 'postgresql://postgres.bvplxcearejbjyhsdcnn:YOUR_PASSWORD@aws-1-us-east-1.pooler.supabase.com:6543/postgres';
 const sql = postgres(connectionString);
+
+// Función para formatear fecha a dd/mm/yyyy
+const formatDate = (date) => {
+  if (!date) return null;
+  const d = new Date(date);
+  const day = d.getDate().toString().padStart(2, '0');
+  const month = (d.getMonth() + 1).toString().padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}/${month}/${year}`;
+};
 
 // Middleware para manejo de errores de base de datos
 const handleDBError = (error, res) => {
@@ -60,7 +71,6 @@ app.get("/api/tracker_activities/students/list", async (req, res) => {
     handleDBError(error, res);
   }
 });
-
 
 // 3. GET /api/tracker_activities/activities/create
 // Crear nueva actividad usando query parameters
@@ -122,7 +132,7 @@ app.get("/api/tracker_activities/activities/create", async (req, res) => {
     const result = await sql`
       INSERT INTO activities (name, date, id_subject, description)
       VALUES (${name.trim()}, ${date}, ${subjectId}, ${description ? description.trim() : null})
-      RETURNING id
+      RETURNING id, name, date, id_subject, description
     `;
 
     res.status(201).json({
@@ -130,10 +140,10 @@ app.get("/api/tracker_activities/activities/create", async (req, res) => {
       id: result[0].id,
       data: {
         id: result[0].id,
-        name: name.trim(),
-        date: date,
-        id_subject: subjectId,
-        description: description ? description.trim() : null
+        name: result[0].name,
+        date: formatDate(result[0].date),
+        id_subject: result[0].id_subject,
+        description: result[0].description
       }
     });
 
@@ -288,9 +298,15 @@ app.get("/api/tracker_activities/activities/list", async (req, res) => {
       ORDER BY a.date DESC, a.name ASC
     `;
 
+    // Formatear las fechas en los resultados
+    const formattedActivities = activities.map(activity => ({
+      ...activity,
+      date: formatDate(activity.date)
+    }));
+
     res.status(200).json({
       message: "Actividades obtenidas exitosamente",
-      data: activities
+      data: formattedActivities
     });
 
   } catch (error) {
@@ -339,12 +355,19 @@ app.get("/api/tracker_activities/qualifications/list", async (req, res) => {
   }
 });
 
-
 // Endpoint de salud para verificar que el servidor está funcionando
 app.get("/api/health", (req, res) => {
   res.status(200).json({
     message: "Servidor funcionando correctamente",
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    endpoints: [
+      "GET /api/tracker_activities/subjects/list",
+      "GET /api/tracker_activities/students/list", 
+      "GET /api/tracker_activities/activities/create?id=1&name=Examen&date=2024-12-01&description=Desc",
+      "GET /api/tracker_activities/qualifications/create?id_subject=1&num_list=5&qualification=85&id_activity=2",
+      "GET /api/tracker_activities/activities/list?id_subject=1",
+      "GET /api/tracker_activities/qualifications/list?id_activity=1"
+    ]
   });
 });
 
@@ -362,7 +385,11 @@ app.use((error, req, res, next) => {
     error: "Error interno del servidor"
   });
 });
+
+// Iniciar servidor
 app.listen(port, () => {
-  console.log(`Servidor corriendo en el puerto ${port}`);
+  console.log(`Servidor ejecutándose en puerto ${port}`);
+  console.log(`Salud del servidor: http://localhost:${port}/api/health`);
 });
+
 module.exports = app;
