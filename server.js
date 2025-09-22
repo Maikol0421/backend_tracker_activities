@@ -158,6 +158,7 @@ app.get("/api/tracker_activities/activities/create", async (req, res) => {
   }
 });
 
+
 // 4. GET /api/tracker_activities/qualifications/create
 // Crear nueva calificación usando query parameters
 // Parámetros: ?id_subject=1&num_list=5&qualification=85&id_activity=2
@@ -225,15 +226,25 @@ app.get("/api/tracker_activities/qualifications/create", async (req, res) => {
       });
     }
 
-    // Verificar si ya existe una calificación para este estudiante en esta actividad
+    // VALIDACIÓN PRINCIPAL: Verificar si ya existe una calificación para este estudiante en esta actividad
     const existingQualification = await sql`
-      SELECT id FROM qualifications 
-      WHERE num_list_student = ${studentNumList} AND id_activity = ${activityId}
+      SELECT q.id, q.qualification, a.name as activity_name, s.subject as subject_name
+      FROM qualifications q
+      INNER JOIN activities a ON q.id_activity = a.id
+      INNER JOIN subjects s ON a.id_subject = s.id
+      WHERE q.num_list_student = ${studentNumList} 
+      AND q.id_activity = ${activityId}
     `;
 
     if (existingQualification.length > 0) {
-      return res.status(400).json({
-        error: "Ya existe una calificación para este estudiante en esta actividad"
+      return res.status(409).json({
+        error: "Ya existe una calificación para este estudiante en esta actividad",
+        details: {
+          existing_qualification: existingQualification[0].qualification,
+          activity_name: existingQualification[0].activity_name,
+          subject_name: existingQualification[0].subject_name,
+          student_num_list: studentNumList
+        }
       });
     }
 
@@ -260,8 +271,8 @@ app.get("/api/tracker_activities/qualifications/create", async (req, res) => {
       res.status(400).json({
         error: "La actividad especificada no existe"
       });
-    } else if (error.code === '23505') { // Unique violation
-      res.status(400).json({
+    } else if (error.code === '23505') { // Unique violation (por si hay constraint único en BD)
+      res.status(409).json({
         error: "Ya existe una calificación para este estudiante en esta actividad"
       });
     } else {
