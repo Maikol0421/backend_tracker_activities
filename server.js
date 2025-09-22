@@ -314,6 +314,7 @@ app.get("/api/tracker_activities/activities/list", async (req, res) => {
   }
 });
 
+
 // Endpoint adicional: GET /api/tracker_activities/qualifications/list
 // Obtener calificaciones por actividad
 // Parámetro: ?id_activity=1
@@ -348,6 +349,122 @@ app.get("/api/tracker_activities/qualifications/list", async (req, res) => {
     res.status(200).json({
       message: "Calificaciones obtenidas exitosamente",
       data: qualifications
+    });
+
+  } catch (error) {
+    handleDBError(error, res);
+  }
+});
+
+
+
+
+// Endpoint para grid de calificaciones
+// GET /api/tracker_activities/qualifications/grid
+// Obtener grid completo de estudiantes y sus calificaciones por materia
+// Parámetro: ?id_subject=1
+app.get("/api/tracker_activities/qualifications/grid", async (req, res) => {
+  const { id_subject } = req.query;
+
+  if (!id_subject) {
+    return res.status(400).json({
+      error: "El parámetro id_subject es obligatorio"
+    });
+  }
+
+  const subjectId = parseInt(id_subject);
+  if (isNaN(subjectId) || subjectId <= 0) {
+    return res.status(400).json({
+      error: "El parámetro id_subject debe ser un número entero positivo"
+    });
+  }
+
+  try {
+    // Obtener todas las actividades de la materia
+    const activities = await sql`
+      SELECT id, name, date
+      FROM activities 
+      WHERE id_subject = ${subjectId}
+      ORDER BY date ASC, name ASC
+    `;
+
+    if (activities.length === 0) {
+      return res.status(200).json({
+        message: "No hay actividades para esta materia",
+        data: {
+          columns: [
+            { key: "num_list", label: "NumLista", type: "number" },
+            { key: "student_name", label: "Nombre Alumno", type: "text" }
+          ],
+          rows: []
+        }
+      });
+    }
+
+    // Obtener todos los estudiantes
+    const students = await sql`
+      SELECT num_list, name 
+      FROM students 
+      ORDER BY num_list ASC
+    `;
+
+    // Obtener todas las calificaciones de la materia
+    const qualifications = await sql`
+      SELECT q.qualification, q.num_list_student, q.id_activity
+      FROM qualifications q
+      INNER JOIN activities a ON q.id_activity = a.id
+      WHERE a.id_subject = ${subjectId}
+    `;
+
+    // Crear un mapa de calificaciones para acceso rápido
+    const qualificationsMap = {};
+    qualifications.forEach(q => {
+      const key = `${q.num_list_student}-${q.id_activity}`;
+      qualificationsMap[key] = q.qualification;
+    });
+
+    // Construir las columnas del grid
+    const columns = [
+      { key: "num_list", label: "NumLista", type: "number" },
+      { key: "student_name", label: "Nombre Alumno", type: "text" }
+    ];
+
+    // Agregar columnas de actividades
+    activities.forEach(activity => {
+      columns.push({
+        key: `activity_${activity.id}`,
+        label: activity.name,
+        type: "qualification",
+        activity_id: activity.id,
+        activity_date: formatDate(activity.date)
+      });
+    });
+
+    // Construir las filas del grid
+    const rows = students.map(student => {
+      const row = {
+        num_list: student.num_list,
+        student_name: student.name
+      };
+
+      // Agregar calificaciones para cada actividad
+      activities.forEach(activity => {
+        const key = `${student.num_list}-${activity.id}`;
+        row[`activity_${activity.id}`] = qualificationsMap[key] || null;
+      });
+
+      return row;
+    });
+
+    res.status(200).json({
+      message: "Grid de calificaciones obtenido exitosamente",
+      data: {
+        subject_id: subjectId,
+        total_students: students.length,
+        total_activities: activities.length,
+        columns: columns,
+        rows: rows
+      }
     });
 
   } catch (error) {
