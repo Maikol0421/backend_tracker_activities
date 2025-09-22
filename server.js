@@ -61,22 +61,25 @@ app.get("/api/tracker_activities/students/list", async (req, res) => {
   }
 });
 
-// 3. POST /api/tracker_activities/activities/create
-// Crear nueva actividad
-app.post("/api/tracker_activities/activities/create", async (req, res) => {
-  const { id, name, date, description } = req.body;
+
+// 3. GET /api/tracker_activities/activities/create
+// Crear nueva actividad usando query parameters
+// Parámetros: ?id=1&name=Examen&date=2024-12-01&description=Descripción
+app.get("/api/tracker_activities/activities/create", async (req, res) => {
+  const { id, name, date, description } = req.query;
 
   // Validaciones de campos obligatorios
   if (!id || !name || !date) {
     return res.status(400).json({
-      error: "Los campos id (materia), name y date son obligatorios"
+      error: "Los parámetros id (materia), name y date son obligatorios"
     });
   }
 
   // Validar que id sea un número
-  if (!Number.isInteger(id) || id <= 0) {
+  const subjectId = parseInt(id);
+  if (isNaN(subjectId) || subjectId <= 0) {
     return res.status(400).json({
-      error: "El campo id debe ser un número entero positivo"
+      error: "El parámetro id debe ser un número entero positivo"
     });
   }
 
@@ -84,7 +87,7 @@ app.post("/api/tracker_activities/activities/create", async (req, res) => {
   const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
   if (!dateRegex.test(date)) {
     return res.status(400).json({
-      error: "El campo date debe tener el formato YYYY-MM-DD"
+      error: "El parámetro date debe tener el formato YYYY-MM-DD"
     });
   }
 
@@ -96,10 +99,17 @@ app.post("/api/tracker_activities/activities/create", async (req, res) => {
     });
   }
 
+  // Validar longitud del nombre
+  if (name.trim().length === 0) {
+    return res.status(400).json({
+      error: "El nombre de la actividad no puede estar vacío"
+    });
+  }
+
   try {
     // Verificar que la materia existe
     const subjectExists = await sql`
-      SELECT id FROM subjects WHERE id = ${id}
+      SELECT id FROM subjects WHERE id = ${subjectId}
     `;
 
     if (subjectExists.length === 0) {
@@ -111,13 +121,20 @@ app.post("/api/tracker_activities/activities/create", async (req, res) => {
     // Insertar la actividad
     const result = await sql`
       INSERT INTO activities (name, date, id_subject, description)
-      VALUES (${name.trim()}, ${date}, ${id}, ${description ? description.trim() : null})
+      VALUES (${name.trim()}, ${date}, ${subjectId}, ${description ? description.trim() : null})
       RETURNING id
     `;
 
     res.status(201).json({
       message: "Actividad creada exitosamente",
-      id: result[0].id
+      id: result[0].id,
+      data: {
+        id: result[0].id,
+        name: name.trim(),
+        date: date,
+        id_subject: subjectId,
+        description: description ? description.trim() : null
+      }
     });
 
   } catch (error) {
@@ -131,47 +148,53 @@ app.post("/api/tracker_activities/activities/create", async (req, res) => {
   }
 });
 
-// 4. POST /api/tracker_activities/qualifications/create
-// Crear nueva calificación
-app.post("/api/tracker_activities/qualifications/create", async (req, res) => {
-  const { id_subject, num_list, qualification, id_activity } = req.body;
+// 4. GET /api/tracker_activities/qualifications/create
+// Crear nueva calificación usando query parameters
+// Parámetros: ?id_subject=1&num_list=5&qualification=85&id_activity=2
+app.get("/api/tracker_activities/qualifications/create", async (req, res) => {
+  const { id_subject, num_list, qualification, id_activity } = req.query;
 
   // Validaciones de campos obligatorios
   if (!id_subject || !num_list || qualification === undefined || !id_activity) {
     return res.status(400).json({
-      error: "Los campos id_subject, num_list, qualification y id_activity son obligatorios"
+      error: "Los parámetros id_subject, num_list, qualification y id_activity son obligatorios"
     });
   }
 
-  // Validar que sean números
-  if (!Number.isInteger(id_subject) || id_subject <= 0) {
+  // Convertir y validar números
+  const subjectId = parseInt(id_subject);
+  const studentNumList = parseInt(num_list);
+  const qualificationValue = parseInt(qualification);
+  const activityId = parseInt(id_activity);
+
+  if (isNaN(subjectId) || subjectId <= 0) {
     return res.status(400).json({
-      error: "El campo id_subject debe ser un número entero positivo"
+      error: "El parámetro id_subject debe ser un número entero positivo"
     });
   }
 
-  if (!Number.isInteger(num_list) || num_list <= 0) {
+  if (isNaN(studentNumList) || studentNumList <= 0) {
     return res.status(400).json({
-      error: "El campo num_list debe ser un número entero positivo"
+      error: "El parámetro num_list debe ser un número entero positivo"
     });
   }
 
-  if (!Number.isInteger(qualification) || qualification < 0 || qualification > 100) {
+  if (isNaN(qualificationValue) || qualificationValue < 0 || qualificationValue > 100) {
     return res.status(400).json({
-      error: "El campo qualification debe ser un número entero entre 0 y 100"
+      error: "El parámetro qualification debe ser un número entero entre 0 y 100"
     });
   }
 
-  if (!Number.isInteger(id_activity) || id_activity <= 0) {
+  if (isNaN(activityId) || activityId <= 0) {
     return res.status(400).json({
-      error: "El campo id_activity debe ser un número entero positivo"
+      error: "El parámetro id_activity debe ser un número entero positivo"
     });
   }
 
   try {
     // Verificar que el estudiante existe
     const studentExists = await sql`
-      SELECT id FROM students WHERE num_list = ${num_list}
+      SELECT id FROM students WHERE num_list = ${studentNumList}
     `;
 
     if (studentExists.length === 0) {
@@ -183,7 +206,7 @@ app.post("/api/tracker_activities/qualifications/create", async (req, res) => {
     // Verificar que la actividad existe y pertenece a la materia especificada
     const activityExists = await sql`
       SELECT id FROM activities 
-      WHERE id = ${id_activity} AND id_subject = ${id_subject}
+      WHERE id = ${activityId} AND id_subject = ${subjectId}
     `;
 
     if (activityExists.length === 0) {
@@ -195,7 +218,7 @@ app.post("/api/tracker_activities/qualifications/create", async (req, res) => {
     // Verificar si ya existe una calificación para este estudiante en esta actividad
     const existingQualification = await sql`
       SELECT id FROM qualifications 
-      WHERE num_list_student = ${num_list} AND id_activity = ${id_activity}
+      WHERE num_list_student = ${studentNumList} AND id_activity = ${activityId}
     `;
 
     if (existingQualification.length > 0) {
@@ -207,13 +230,19 @@ app.post("/api/tracker_activities/qualifications/create", async (req, res) => {
     // Insertar la calificación
     const result = await sql`
       INSERT INTO qualifications (qualification, num_list_student, id_activity)
-      VALUES (${qualification}, ${num_list}, ${id_activity})
+      VALUES (${qualificationValue}, ${studentNumList}, ${activityId})
       RETURNING id
     `;
 
     res.status(201).json({
       message: "Calificación creada exitosamente",
-      id: result[0].id
+      id: result[0].id,
+      data: {
+        id: result[0].id,
+        qualification: qualificationValue,
+        num_list_student: studentNumList,
+        id_activity: activityId
+      }
     });
 
   } catch (error) {
@@ -230,6 +259,86 @@ app.post("/api/tracker_activities/qualifications/create", async (req, res) => {
     }
   }
 });
+
+// Endpoint adicional: GET /api/tracker_activities/activities/list
+// Obtener actividades por materia
+// Parámetro: ?id_subject=1
+app.get("/api/tracker_activities/activities/list", async (req, res) => {
+  const { id_subject } = req.query;
+
+  if (!id_subject) {
+    return res.status(400).json({
+      error: "El parámetro id_subject es obligatorio"
+    });
+  }
+
+  const subjectId = parseInt(id_subject);
+  if (isNaN(subjectId) || subjectId <= 0) {
+    return res.status(400).json({
+      error: "El parámetro id_subject debe ser un número entero positivo"
+    });
+  }
+
+  try {
+    const activities = await sql`
+      SELECT a.id, a.name, a.date, a.description, s.subject as subject_name
+      FROM activities a
+      INNER JOIN subjects s ON a.id_subject = s.id
+      WHERE a.id_subject = ${subjectId}
+      ORDER BY a.date DESC, a.name ASC
+    `;
+
+    res.status(200).json({
+      message: "Actividades obtenidas exitosamente",
+      data: activities
+    });
+
+  } catch (error) {
+    handleDBError(error, res);
+  }
+});
+
+// Endpoint adicional: GET /api/tracker_activities/qualifications/list
+// Obtener calificaciones por actividad
+// Parámetro: ?id_activity=1
+app.get("/api/tracker_activities/qualifications/list", async (req, res) => {
+  const { id_activity } = req.query;
+
+  if (!id_activity) {
+    return res.status(400).json({
+      error: "El parámetro id_activity es obligatorio"
+    });
+  }
+
+  const activityId = parseInt(id_activity);
+  if (isNaN(activityId) || activityId <= 0) {
+    return res.status(400).json({
+      error: "El parámetro id_activity debe ser un número entero positivo"
+    });
+  }
+
+  try {
+    const qualifications = await sql`
+      SELECT q.id, q.qualification, q.num_list_student, s.name as student_name, 
+             a.name as activity_name, sub.subject as subject_name
+      FROM qualifications q
+      INNER JOIN students s ON q.num_list_student = s.num_list
+      INNER JOIN activities a ON q.id_activity = a.id
+      INNER JOIN subjects sub ON a.id_subject = sub.id
+      WHERE q.id_activity = ${activityId}
+      ORDER BY s.num_list ASC
+    `;
+
+    res.status(200).json({
+      message: "Calificaciones obtenidas exitosamente",
+      data: qualifications
+    });
+
+  } catch (error) {
+    handleDBError(error, res);
+  }
+});
+
 
 // Endpoint de salud para verificar que el servidor está funcionando
 app.get("/api/health", (req, res) => {
